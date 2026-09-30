@@ -86,7 +86,6 @@ ErrorCode MultiInputConvExecution::onResize(const std::vector<Tensor*> &inputs, 
     MemChunk bufferFilter;
     if(mNeedWeightFill) {
         bufferFilter = pool->alloc(elementBytes * (size_t)mGemmInfo.elhPad[1] * (size_t)mGemmInfo.elhPad[2]);
-        if (nullptr == bufferFilter.first) { MNN_ERROR("CUDA alloc failed\n"); return OUT_OF_MEMORY; }
         mFilterAddr = (void*)(bufferFilter.ptr());
     } else {
         mFilterAddr = (void*)inputs[1]->deviceId();
@@ -96,7 +95,6 @@ ErrorCode MultiInputConvExecution::onResize(const std::vector<Tensor*> &inputs, 
     MemChunk bufferBias;
     if(mNeedBiasFill) {
         bufferBias = pool->alloc(elementBytes * (size_t)mGemmInfo.elhPad[2]);
-        if (nullptr == bufferBias.first) { MNN_ERROR("CUDA alloc failed\n"); return OUT_OF_MEMORY; }
         mBiasAddr = (void*)(bufferBias.ptr());
 
     } else {
@@ -113,7 +111,6 @@ ErrorCode MultiInputConvExecution::onResize(const std::vector<Tensor*> &inputs, 
     MemChunk bufferIm2Col;
     if(mNeedIm2Col) {
         bufferIm2Col = pool->alloc(elementBytes * (size_t)mGemmInfo.elh[0] * (size_t)mGemmInfo.elhPad[1]);
-        if (nullptr == bufferIm2Col.first) { MNN_ERROR("CUDA alloc failed\n"); return OUT_OF_MEMORY; }
         mIm2ColBuffer = (void*)(bufferIm2Col.ptr());
     }
 

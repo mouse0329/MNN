@@ -56,10 +56,7 @@ VulkanImage::VulkanImage(const VulkanMemoryPool& pool, bool separate, const std:
     mDevice.getImageMemoryRequirements(mImage.first, memRequirements);
 
     mMemory = const_cast<VulkanMemoryPool&>(mPool).allocMemory(memRequirements, 0, separate);
-    if (nullptr == mMemory.first) {
-        MNN_ERROR("VulkanImage: allocMemory failed\n");
-        return;
-    }
+    //        FUNC_PRINT(mMemory->type());
     auto realMem = (VulkanMemory*)mMemory.first;
     mDevice.bindImageMemory(mImage.first, realMem->get(), mMemory.second);
     CALL_VK(mDevice.createImageView(mImage.second, mImage.first, viewType, format));

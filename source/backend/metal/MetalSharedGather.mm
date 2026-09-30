@@ -240,7 +240,6 @@ bool MetalSharedGather::onClone(Backend *bn, const Op *op, Execution **dst) {
         return true;
     }
     *dst = new MetalSharedGather(bn, mOc, mWeight, mDequantScaleBias, mDequantBits, mScaleCoef);
-    MNN_METAL_PROFILE_REGISTER_CLONE(bn, op, *dst);
     return true;
 }
 

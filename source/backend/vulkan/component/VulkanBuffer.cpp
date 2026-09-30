@@ -22,10 +22,7 @@ VulkanBuffer::VulkanBuffer(const VulkanMemoryPool& pool, bool separate, size_t s
     VkMemoryRequirements memReq;
     mPool.device().getBufferMemoryRequirements(mBuffer, memReq);
     mMemory = const_cast<VulkanMemoryPool&>(mPool).allocMemory(memReq, requirements_mask, separate);
-    if (nullptr == mMemory.first) {
-        MNN_ERROR("VulkanBuffer: allocMemory failed, size=%zu\n", size);
-        return;
-    }
+    //        FUNC_PRINT(mMemory->type());
     auto realMem = (VulkanMemory*)mMemory.first;
 
     if (nullptr != hostData) {

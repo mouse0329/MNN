@@ -64,11 +64,7 @@ public:
         int threadNumber       = ((CPUBackend *)backend())->threadNumber();
         auto padType           = layer->padType();
         auto countType         = layer->countType();
-        if (!layer->isGlobal() && layer->pads() != nullptr && padType == PoolPadType_CAFFE) {
-            if (layer->pads()->size() == 4) {
-                padHeight = layer->pads()->data()[0];
-                padWidth = layer->pads()->data()[1];
-            }
+        if (layer->pads() != nullptr && padType == PoolPadType_CAFFE) {
             padType = PoolPadType_VALID;
         }
         if(outputs.size() == 2){

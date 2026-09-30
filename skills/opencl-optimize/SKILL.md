@@ -21,8 +21,6 @@ description: MNN OpenCL 后端 op/kernel 优化与扩展。覆盖 .cl + codegen 
 
 5. **真机才算数（Android）**。OpenCL 主要面向 Android 手机 GPU（Adreno / Mali）。Mac/desktop OpenCL 行为差异大，不能代表手机性能或稳定性。**进入性能/稳定性测试前先 `adb devices` 检查**，没设备时直接停下来给用户提需求："请连一台 Android 真机，目标 GPU [Adreno 740 / ...]"，不要拿 Mac 数字当结论。
 
-6. **单测必须确认实际执行了目标内存模式**。只有 Buffer Execution 的算子，仅指定 `backend=3` 仍可能走 Image 模式并回退 CPU，形成假通过。测试时显式设置 Buffer mode（例如 `run_test.out <case> 3 2 68`），并用 profiler、后端日志或明显的 GPU 同步耗时确认没有 fallback。
-
 ---
 
 ## 入口定位
@@ -91,10 +89,6 @@ mobile GPU 有 L2 + texture cache。"表面看每个 wavefront 都重读同一�
 为了让"未扩展的 kernel"在新 quant bit 下编译过，常加 `#define W_QUANT_4` alias。**坑**：alias 让 `#ifdef W_QUANT_4` 在你想扩展的 kernel 里也被命中，body 用 W_QUANT_4 layout 跑你的 W_QUANT_2 buffer → 数值错但能跑。
 
 修法：扩展的 kernel 里所有相关 `#ifdef` 必须 `W_QUANT_2 → W_QUANT_3 → W_QUANT_4 → W_QUANT_8` 顺序，**新 bit 放最前**优先匹配。
-
-### 陷阱 G：布局 helper 和调用点重复累加偏移
-
-抽出 NCHW/NC4HW4 offset helper 时，先明确返回的是 tensor base、vector base，还是完整 element offset。若 helper 已包含 `channel4 * 4`，调用点再加一次 `x` 会造成错位写甚至越界；`C=4` 的测试因为 `x=0` 还会假通过。回归至少覆盖两个 vector block，并优先使用真实模型的 `head_dim` / channel 规模。
 
 ---
 
@@ -249,3 +243,4 @@ BW saturation = weight_bytes_read_per_token / decode_time_per_token / theoretica
 GPU 跑分波动 ~5-10%，单次数字不可靠。同设备跑 10 次取中位数对比。
 
 ---
+

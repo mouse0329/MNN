@@ -46,8 +46,7 @@ static bool validRopeC4Input(const Tensor* q, const Tensor* k, int numHead, int 
         TensorUtils::getDescribe(k)->dimensionFormat != MNN_DATA_FORMAT_NC4HW4) {
         return false;
     }
-    if (q->dimensions() != 4 || k->dimensions() != 4 || q->length(0) != k->length(0) || q->length(2) != 1 ||
-        q->length(3) != 1 || k->length(2) != 1 || k->length(3) != 1) {
+    if (q->dimensions() < 2 || k->dimensions() < 2) {
         return false;
     }
     return q->length(1) == numHead * headDim && k->length(1) == kvNumHead * headDim;
@@ -117,13 +116,16 @@ ErrorCode RopeBufExecution::onEncode(const std::vector<Tensor*>& inputs, const s
     int headDim = mHeadDim;
     int kvNumHead = mKvNumHead;
 
+    int halfD = headDim / 2;
     int ropeDim = mRopeCutHeadDim;
     if (ropeDim <= 0 || ropeDim > headDim) {
         ropeDim = headDim;
     }
     ropeDim = (ropeDim / 2) * 2;
     int ropeHalfD = ropeDim / 2;
-    int workDim = ALIMAX(ropeHalfD, headDim - ropeDim);
+    if (ropeHalfD > halfD) {
+        ropeHalfD = halfD;
+    }
 
     int outerSize = batch * seqLen;
     int fullHead = numHead + kvNumHead;
@@ -147,7 +149,7 @@ ErrorCode RopeBufExecution::onEncode(const std::vector<Tensor*>& inputs, const s
     if (mQGamma || mKGamma) {
         mGlobalWorkSize = {1, static_cast<uint32_t>(outerSize), static_cast<uint32_t>(fullHead)};
     } else {
-        mGlobalWorkSize = {static_cast<uint32_t>(workDim), static_cast<uint32_t>(outerSize),
+        mGlobalWorkSize = {static_cast<uint32_t>(halfD), static_cast<uint32_t>(outerSize),
                            static_cast<uint32_t>(fullHead)};
     }
 
@@ -163,7 +165,7 @@ ErrorCode RopeBufExecution::onEncode(const std::vector<Tensor*>& inputs, const s
     ret |= unit.kernel->get().setArg(idx++, openCLBuffer(outputs[0]));
     ret |= unit.kernel->get().setArg(idx++, openCLBuffer(outputs[1]));
     ret |= unit.kernel->get().setArg(idx++, outerSize);
-    ret |= unit.kernel->get().setArg(idx++, workDim);
+    ret |= unit.kernel->get().setArg(idx++, halfD);
     ret |= unit.kernel->get().setArg(idx++, ropeHalfD);
     ret |= unit.kernel->get().setArg(idx++, headDim);
     ret |= unit.kernel->get().setArg(idx++, numHead);

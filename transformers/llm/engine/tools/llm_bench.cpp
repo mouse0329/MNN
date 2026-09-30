@@ -33,8 +33,7 @@ struct RuntimeParameters {
     std::vector<int>                 dynamicOption;
     std::vector<int>                 divisionRatioSme2Neon;
     std::vector<int>                 smeCoreNum;
-    std::vector<int>                 quantKv;
-    std::vector<int>                 flashAttention;
+    std::vector<int>                 attentionOption;
 };
 
 struct TestParameters {
@@ -57,8 +56,7 @@ struct CommandParameters {
     int                 dynamicOption;
     int                 divisionRatioSme2Neon;
     int                 smeCoreNum;
-    int                 quantKv;
-    int                 flashAttention;
+    int                 attentionOption;
 
     int                 nPrompt;
     int                 nGenerate;
@@ -80,8 +78,7 @@ static const RuntimeParameters runtimeParamsDefaults = {
     /* dynamicOption        */ { 0 },
     /* divisionRatioSme2Neon*/ { 41 },
     /* smeCoreNum             */ { 2 },
-    /* quantKv              */  { 0 },
-    /* flashAttention        */  { 1 }
+    /* attentionOption       */  { 0 }
 };
 
 
@@ -109,8 +106,7 @@ struct commandParametersInstance {
         mCmdParam.memory         = cmdParam.memory;
         mCmdParam.dynamicOption  = cmdParam.dynamicOption;
         mCmdParam.divisionRatioSme2Neon = cmdParam.divisionRatioSme2Neon;
-        mCmdParam.quantKv = cmdParam.quantKv;
-        mCmdParam.flashAttention  = cmdParam.flashAttention;
+        mCmdParam.attentionOption = cmdParam.attentionOption;
 
         mCmdParam.nPrompt        = cmdParam.nPrompt;
         mCmdParam.nGenerate      = cmdParam.nGenerate;
@@ -132,8 +128,7 @@ struct commandParametersInstance {
         mCmdParam.precision == other.mCmdParam.precision &&
         mCmdParam.memory == other.mCmdParam.memory &&
         mCmdParam.dynamicOption == other.mCmdParam.dynamicOption &&
-        mCmdParam.quantKv == other.mCmdParam.quantKv &&
-        mCmdParam.flashAttention == other.mCmdParam.flashAttention &&
+        mCmdParam.attentionOption == other.mCmdParam.attentionOption &&
         mCmdParam.smeCoreNum == other.mCmdParam.smeCoreNum &&
         mCmdParam.divisionRatioSme2Neon == other.mCmdParam.divisionRatioSme2Neon;
     }
@@ -189,8 +184,7 @@ struct TestInstance {
     int                      dynamicOption;
     int                      divisionRatioSme2Neon;
     int                      smeCoreNum;
-    int                      quantKv;
-    int                      flashAttention;
+    int                      attentionOption;
 
     TestInstance(const commandParametersInstance & instance) {
 
@@ -206,8 +200,7 @@ struct TestInstance {
         dynamicOption     = instance.mCmdParam.dynamicOption;
         divisionRatioSme2Neon = instance.mCmdParam.divisionRatioSme2Neon;
         smeCoreNum        = instance.mCmdParam.smeCoreNum;
-        quantKv    = instance.mCmdParam.quantKv;
-        flashAttention     = instance.mCmdParam.flashAttention;
+        attentionOption    = instance.mCmdParam.attentionOption;
     }
 
     std::vector<double> getTokensPerSecond(int n_tokens, std::vector<int64_t> cost_us) const {
@@ -333,15 +326,12 @@ struct markdownPrinter : public Printer {
         if (!(rp.divisionRatioSme2Neon.size() == 1 && rp.divisionRatioSme2Neon[0] == runtimeParamsDefaults.divisionRatioSme2Neon[0])) {
             fields.emplace_back("divisionRatioSme2Neon");
         }
-        for (auto x: rp.quantKv) {
+        for (auto x: rp.attentionOption) {
             if (x != 0) {
-                fields.emplace_back("quantKv");
+                fields.emplace_back("attentionOption");
                 break;
             }
             break;
-        }
-        if (!(rp.flashAttention.size() == 1 && rp.flashAttention[0] == 1)) {
-            fields.emplace_back("flashAttention");
         }
 
         if (!(rp.smeCoreNum.size() == 1 && rp.smeCoreNum[0] == runtimeParamsDefaults.smeCoreNum[0])) {
@@ -392,7 +382,6 @@ struct markdownPrinter : public Printer {
                 if (t.backend == 1) value = "METAL";
                 else if (t.backend == 2) value = "CUDA";
                 else if (t.backend == 3) value = "OPENCL";
-                else if (t.backend == 10) value = "HEXAGON";
                 else value = "CPU";
             } else if (field == "test") {
                 if (t.nPrompt > 0 && t.nGenerate == 0) {
@@ -442,11 +431,16 @@ struct markdownPrinter : public Printer {
             } else if (field == "smeCoreNum") {
                 snprintf(buf, sizeof(buf), "%d", t.smeCoreNum);
                 value = buf;
-            } else if (field == "quantKv") {
-                snprintf(buf, sizeof(buf), "%d", t.quantKv);
-                value = buf;
-            } else if (field == "flashAttention") {
-                value = t.flashAttention ? "on" : "off";
+            } else if (field == "attentionOption") {
+                snprintf(buf, sizeof(buf), "%d", t.attentionOption);
+//                value = buf;
+                if (t.attentionOption == 1) {
+                    value = "Int8 Q,K";
+                } else if (t.attentionOption == 2) {
+                    value = "Int8 Q,K,V";
+                } else {
+
+                }
             }
             else {
                 assert(false);
@@ -493,7 +487,6 @@ struct jsonAggregator : public Printer {
         writer.Key("backend");
         if (t.backend == 1) writer.String("METAL");
         else if (t.backend == 3) writer.String("OPENCL");
-        else if (t.backend == 10) writer.String("HEXAGON");
         else writer.String("CPU");
 
         writer.Key("threads");
@@ -506,10 +499,8 @@ struct jsonAggregator : public Printer {
         writer.Int(t.memory);
         writer.Key("power");
         writer.Int(t.power);
-        writer.Key("quantKv");
-        writer.Int(t.quantKv);
-        writer.Key("flashAttention");
-        writer.Int(t.flashAttention);
+        writer.Key("attentionOption");
+        writer.Int(t.attentionOption);
 
         // Store metrics as arrays to avoid duplicate keys
         writer.Key("results");
@@ -675,8 +666,7 @@ static std::vector<commandParametersInstance> get_cmd_params_instances(const Run
     for (const auto & dyop : rp.dynamicOption)
     for (const auto &mratio: rp.divisionRatioSme2Neon)
     for (const auto &smeNum: rp.smeCoreNum)
-    for (const auto & quantKv : rp.quantKv)
-    for (const auto & flashAttn : rp.flashAttention)
+    for (const auto & quantAttn : rp.attentionOption)
         if (tp.kvCache == "true") { // MNN llm_demo test standard
             for (const auto & nPrompt : tp.nPrompt) {
                 if (nPrompt == 0) {
@@ -697,8 +687,7 @@ static std::vector<commandParametersInstance> get_cmd_params_instances(const Run
                     tmpParam.nGenerate = nGenerate;
                     tmpParam.useMmap = rp.useMmap;
                     tmpParam.dynamicOption = dyop;
-                    tmpParam.quantKv = quantKv;
-                    tmpParam.flashAttention = flashAttn;
+                    tmpParam.attentionOption = quantAttn;
                     tmpParam.nRepeat = tp.nRepeat[0];
                     tmpParam.kvCache = "true";
                     tmpParam.loadingTime = tp.loadTime;
@@ -724,8 +713,7 @@ static std::vector<commandParametersInstance> get_cmd_params_instances(const Run
                 tmpParam.precision = precision;
                 tmpParam.memory = memory;
                 tmpParam.dynamicOption = dyop;
-                tmpParam.quantKv = quantKv;
-                tmpParam.flashAttention = flashAttn;
+                tmpParam.attentionOption = quantAttn;
                 tmpParam.nRepeat = tp.nRepeat[0];
                 tmpParam.kvCache = "false";
                 tmpParam.loadingTime = tp.loadTime;
@@ -746,8 +734,7 @@ static std::vector<commandParametersInstance> get_cmd_params_instances(const Run
                 tmpParam.precision = precision;
                 tmpParam.memory = memory;
                 tmpParam.dynamicOption = dyop;
-                tmpParam.quantKv = quantKv;
-                tmpParam.flashAttention = flashAttn;
+                tmpParam.attentionOption = quantAttn;
                 tmpParam.nRepeat = tp.nRepeat[0];
                 tmpParam.kvCache = "false";
                 tmpParam.loadingTime = tp.loadTime;
@@ -771,8 +758,7 @@ static std::vector<commandParametersInstance> get_cmd_params_instances(const Run
                 tmpParam.precision = precision;
                 tmpParam.memory = memory;
                 tmpParam.dynamicOption = dyop;
-                tmpParam.quantKv = quantKv;
-                tmpParam.flashAttention = flashAttn;
+                tmpParam.attentionOption = quantAttn;
                 tmpParam.nRepeat = tp.nRepeat[0];
                 tmpParam.kvCache = "false";
                 tmpParam.loadingTime = tp.loadTime;
@@ -816,7 +802,7 @@ static void printUsage(int /* argc */, char ** argv) {
     printf("options:\n");
     printf("  -h, --help\n");
     printf("  -m, --model <filename>                    (default: ./Qwen2.5-1.5B-Instruct/config.json)\n");
-    printf("  -a, --backends <cpu,opencl,metal,hexagon> (default: %s)\n", "cpu");
+    printf("  -a, --backends <cpu,opencl,metal>         (default: %s)\n", "cpu");
     printf("  -c, --precision <n>                       (default: %s) | Note: (0:Normal(for cpu bakend, 'Normal' is 'High'),1:High,2:Low)\n", join(runtimeParamsDefaults.precision, ",").c_str());
     printf("  -t, --threads <n>                         (default: %s)\n", join(runtimeParamsDefaults.threads, ",").c_str());
     printf("  -p, --n-prompt <n>                        (default: %s)\n", join(testParamsDefaults.nPrompt, ",").c_str());
@@ -830,8 +816,7 @@ static void printUsage(int /* argc */, char ** argv) {
     printf("  -load, --loading-time <true|false>        (default: %s)\n", "true");
     printf("  -dyo, --dynamicOption <n>                 (default: 0) | Note: if set 8, trades higher memory usage for better decoding performance\n");
     printf("  -mr, --mixedSme2NeonRatio <n>             (default: 41) | Note: This parameter is intended to optimize multi-threaded inference performance on backends that support Arm SME instructions. The optimal ratio may vary across different models; we recommend trying values such as 41, 49, 33.\n");
-    printf("  -qa, --quant-attention <n>               (default: 0) | Note: KV cache quantization mode (0=no-quant, 1=QK-int8, 2=QKV-int8, 3=QK-TQ3, 4=QKV-TQ3, 5=QK-TQ4, 6=QKV-TQ4)\n");
-    printf("  -fa, --flash-attention <0|1>              (default: 1) | Note: 1=enable flash attention, 0=disable\n");
+    printf("  -qatten, --quant-attention <0|1>          (default: 0) | Note: if 1, quantize attention's key value to int8; default 0\n");
     printf("  -j, --json <filename>                     (default: llm_bench.json) | Note: if set, output result to a JSON file\n");
     printf("  --profile                                 Enable operator-level profiling to print detailed timing statistics\n");
 }
@@ -903,8 +888,6 @@ static bool parseCmdParams(int argc, char ** argv, RuntimeParameters & runtimePa
                     p.emplace_back(2);
                 } else if (type == "opencl") {
                     p.emplace_back(3);
-                } else if (type == "hexagon") {
-                    p.emplace_back(10);
                 } else {
                     p.emplace_back(0);
                 }
@@ -998,20 +981,14 @@ static bool parseCmdParams(int argc, char ** argv, RuntimeParameters & runtimePa
             }
             auto p = splitString<int>(argv[i], splitDelim);
             runtimeParams.smeCoreNum.insert(runtimeParams.smeCoreNum.end(), p.begin(), p.end());
-        } else if (arg == "-qa" || arg == "-qatten" || arg == "--quant-attention") {
+        } else if (arg == "-qatten" || arg == "--quant-attention") {
+            // do nothing, reserved for future use
             if (++i >= argc) {
                 invalidParam = true;
                 break;
             }
             auto p = splitString<int>(argv[i], splitDelim);
-            runtimeParams.quantKv.insert(runtimeParams.quantKv.end(), p.begin(), p.end());
-        } else if (arg == "-fa" || arg == "--flash-attention") {
-            if (++i >= argc) {
-                invalidParam = true;
-                break;
-            }
-            auto p = splitString<int>(argv[i], splitDelim);
-            runtimeParams.flashAttention.insert(runtimeParams.flashAttention.end(), p.begin(), p.end());
+            runtimeParams.attentionOption.insert(runtimeParams.attentionOption.end(), p.begin(), p.end());
         } else if (arg == "-j" || arg == "--json") {
              jsonMode = true;
              if (i + 1 < argc && argv[i+1][0] != '-') {
@@ -1070,11 +1047,8 @@ static bool parseCmdParams(int argc, char ** argv, RuntimeParameters & runtimePa
     if (runtimeParams.smeCoreNum.empty()) {
         runtimeParams.smeCoreNum = runtimeParamsDefaults.smeCoreNum;
     }
-    if (runtimeParams.quantKv.empty()) {
-        runtimeParams.quantKv = runtimeParamsDefaults.quantKv;
-    }
-    if (runtimeParams.flashAttention.empty()) {
-        runtimeParams.flashAttention = runtimeParamsDefaults.flashAttention;
+    if (runtimeParams.attentionOption.empty()) {
+        runtimeParams.attentionOption = runtimeParamsDefaults.attentionOption;
     }
     if (testParams.nRepeat.empty()) {
         testParams.nRepeat = testParamsDefaults.nRepeat;
@@ -1084,7 +1058,7 @@ static bool parseCmdParams(int argc, char ** argv, RuntimeParameters & runtimePa
 }
 
 
-static Llm* buildLLM(const std::string& config_path, int backend, int memory, int precision, int threads, int power, int dynamic_option, bool use_mmap, int divisionRatioSme2Neon, int smeCoreNum, int promptLen, int quant_kv, int flash_attention) {
+static Llm* buildLLM(const std::string& config_path, int backend, int memory, int precision, int threads, int power, int dynamic_option, bool use_mmap, int divisionRatioSme2Neon, int smeCoreNum, int promptLen, int attention_mode) {
     auto llmPtr = Llm::createLLM(config_path);
     llmPtr->set_config(R"({
         "async":false
@@ -1093,8 +1067,7 @@ static Llm* buildLLM(const std::string& config_path, int backend, int memory, in
     // Otherwise, mContext->history_tokens retains data after the first run, skewing true prefill performance metrics."
     llmPtr->set_config(R"({"reuse_kv":false})");
     std::map<int, std::string> lever = {{0,"normal"}, {1, "high"}, {2, "low"}};
-    std::map<int, std::string> backend_type = {
-        {0, "cpu"}, {1, "metal"}, {2, "cuda"}, {3, "opencl"}, {10, "hexagon"}};
+    std::map<int, std::string> backend_type = {{0, "cpu"}, {1, "metal"}, {2, "cuda"}, {3, "opencl"}};
     std::map<bool, std::string> mmap = {{true,"true"}, {false, "false"}};
 
     bool setSuccess = true;
@@ -1129,8 +1102,7 @@ static Llm* buildLLM(const std::string& config_path, int backend, int memory, in
         MNN_ERROR("dynamic_option for LLM config set error\n");
         return nullptr;
     }
-    int final_attention_mode = flash_attention ? (quant_kv % 8 + 8) : (quant_kv % 8);
-    setSuccess &= llmPtr->set_config("{\"attention_mode\":" + std::to_string(final_attention_mode) + "}");
+    setSuccess &= llmPtr->set_config("{\"attention_mode\":" + std::to_string(attention_mode + 8) + "}");
     if (!setSuccess) {
         MNN_ERROR("attention_mode for LLM config set error\n");
         return nullptr;
@@ -1217,7 +1189,7 @@ int main(int argc, char ** argv) {
         auto executor = MNN::Express::Executor::newExecutor(forwardType, backendConfig, 1);
         MNN::Express::ExecutorScope scope(executor);
 
-        auto llmPtr = buildLLM(instance.mCmdParam.model, instance.mCmdParam.backend, instance.mCmdParam.memory, instance.mCmdParam.precision, instance.mCmdParam.threads, instance.mCmdParam.power, instance.mCmdParam.dynamicOption, instance.mCmdParam.useMmap, instance.mCmdParam.divisionRatioSme2Neon, instance.mCmdParam.smeCoreNum, instance.mCmdParam.nPrompt, instance.mCmdParam.quantKv, instance.mCmdParam.flashAttention);
+        auto llmPtr = buildLLM(instance.mCmdParam.model, instance.mCmdParam.backend, instance.mCmdParam.memory, instance.mCmdParam.precision, instance.mCmdParam.threads, instance.mCmdParam.power, instance.mCmdParam.dynamicOption, instance.mCmdParam.useMmap, instance.mCmdParam.divisionRatioSme2Neon, instance.mCmdParam.smeCoreNum, instance.mCmdParam.nPrompt, instance.mCmdParam.attentionOption);
         std::unique_ptr<Llm> llm(llmPtr);
         if (enableProfile) {
             llm->set_config(R"({"enable_debug":true})");

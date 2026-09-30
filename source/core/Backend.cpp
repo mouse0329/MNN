@@ -51,9 +51,6 @@ extern void registerQNNRuntimeCreator();
 #ifdef MNN_NEUROPILOT
 extern void registerNeuroPilot();
 #endif
-#ifdef MNN_HEXAGON_ENABLED
-extern void registerHexagon();
-#endif
 static std::once_flag s_flag;
 void registerBackend() {
     std::call_once(s_flag, [&]() {
@@ -73,9 +70,6 @@ void registerBackend() {
 #endif
 #if MNN_QNN_ENABLED
     registerQNNRuntimeCreator();
-#endif
-#ifdef MNN_HEXAGON_ENABLED
-        registerHexagon();
 #endif
 #if MNN_OPENCL_ENABLED
         OpenCL::registerOpenCLRuntimeCreator();

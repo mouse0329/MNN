@@ -588,14 +588,9 @@ Backend::MemObj* CPUBackend::allocBuffer(size_t size, Tensor* dest, StorageType 
     auto& buffer = dest->buffer();
     auto des = TensorUtils::getDescribe(dest);
     MemChunk chunk;
-    BufferAllocator* staticAllocator = mRuntime->mStaticAllocator.get();
     switch (storageType) {
         case STATIC: {
             chunk = mRuntime->mStaticAllocator->alloc(size, false);
-            if (chunk.invalid() && nullptr != mRuntime->mStaticAllocatorRaw.get()) {
-                chunk = mRuntime->mStaticAllocatorRaw->alloc(size, false);
-                staticAllocator = mRuntime->mStaticAllocatorRaw.get();
-            }
             break;
         }
         case DYNAMIC: {
@@ -619,7 +614,7 @@ Backend::MemObj* CPUBackend::allocBuffer(size_t size, Tensor* dest, StorageType 
     Backend::MemObj* res = nullptr;
 
     if (storageType == STATIC) {
-        res = new CPUMemObj(staticAllocator, chunk, size);
+        res = new CPUMemObj(mRuntime->mStaticAllocator.get(), chunk, size);
     } else {
         res = new CPUMemObj(mDmaInfo->mCurrentDynamicAllocator, chunk, size);
         chunk.attach(dest);

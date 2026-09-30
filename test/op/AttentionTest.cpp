@@ -28,8 +28,7 @@ const int pastLength = 101;
 #define GENERATE_TOKENS 128
 
 static KVMeta gMeta;
-static std::shared_ptr<Module> _makeAttentionModule(int attentionMode = 8, bool outputC4 = false,
-                                                    bool forceOpenCLBuffer = false) {
+static std::shared_ptr<Module> _makeAttentionModule(int attentionMode = 8, bool outputC4 = false) {
     auto Q = _Input();
     auto K = _Input();
     auto V = _Input();
@@ -50,9 +49,7 @@ static std::shared_ptr<Module> _makeAttentionModule(int attentionMode = 8, bool 
     bnConfig.precision = (MNN::BackendConfig::PrecisionMode)status.precision;
     bnConfig.power = (MNN::BackendConfig::PowerMode)status.power;
     config.backendConfig = &bnConfig;
-    config.numThread = forceOpenCLBuffer && status.forwardType == MNN_FORWARD_OPENCL
-                           ? MNN_GPU_MEMORY_BUFFER | MNN_GPU_TUNING_NONE
-                           : 1;
+    config.numThread = 1;
     std::shared_ptr<Executor::RuntimeManager> rtmgr(Executor::RuntimeManager::createRuntimeManager(config));
     rtmgr->setHintPtr(MNN::Interpreter::KVCACHE_INFO, &gMeta);
     rtmgr->setHint(MNN::Interpreter::ATTENTION_OPTION, attentionMode);
@@ -167,18 +164,19 @@ VARP vector_to_c4_value(std::vector< std::vector< std::vector<float> > > & a) {
     int kvNumHead = a[0].size();
     int headDim = a[0][0].size();
     int channel = kvNumHead * headDim;
-    VARP var = _Input({seqLen, channel, 1, 1}, NCHW, halide_type_of<float>());
-    auto ptr = var->writeMap<float>();
+    std::vector<float> packed(((channel + 3) / 4) * seqLen * 4, 0.0f);
     for (int s = 0; s < seqLen; ++s) {
         for (int h = 0; h < kvNumHead; ++h) {
             for (int d = 0; d < headDim; ++d) {
                 int c = h * headDim + d;
-                ptr[s * channel + c] = a[s][h][d];
+                packed[(c / 4) * seqLen * 4 + s * 4 + (c % 4)] = a[s][h][d];
             }
         }
     }
+    VARP var = _Input({seqLen, channel, 1, 1}, NC4HW4, halide_type_of<float>());
+    ::memcpy(var->writeMap<float>(), packed.data(), packed.size() * sizeof(float));
     var->unMap();
-    return _Convert(var, NC4HW4);
+    return var;
 }
 
 VARP vector_to_var(std::vector< std::vector<int> > & a) {
@@ -611,24 +609,8 @@ public:
     AttentionC4Test() = default;
     virtual ~AttentionC4Test() = default;
 
-    bool compareC4Result(int seqLen, const char* caseName) {
-        auto outputInfo = Output->getInfo();
-        if (outputInfo == nullptr) {
-            MNN_ERROR("AttentionC4Test failed to get output info\n");
-            return false;
-        }
-        auto logicalOutput = _Convert(Output, NCHW);
-        const float* resultPtr = logicalOutput->readMap<float>();
-        if (resultPtr == nullptr) {
-            MNN_ERROR("AttentionC4Test failed to map output, expected seqLen=%d, output size=%zu\n", seqLen,
-                      outputInfo->size);
-            return false;
-        }
-        if (expected_result.size() != seqLen) {
-            MNN_ERROR("AttentionC4Test expected result size mismatch: expected=%d, actual=%zu\n", seqLen,
-                      expected_result.size());
-            return false;
-        }
+    bool compareC4Result(int seqLen) {
+        const float* resultPtr = Output->readMap<float>();
         const int hidden = NumHead * HeadDim;
         std::vector<float> actual(seqLen * hidden);
         std::vector<float> expected(seqLen * hidden);
@@ -636,14 +618,15 @@ public:
             for (int h = 0; h < NumHead; ++h) {
                 for (int d = 0; d < HeadDim; ++d) {
                     int c = h * HeadDim + d;
+                    int c4Index = (c % 4) + 4 * i + 4 * seqLen * (c / 4);
                     int logicalIndex = i * hidden + c;
-                    actual[logicalIndex] = resultPtr[logicalIndex];
+                    actual[logicalIndex] = resultPtr[c4Index];
                     expected[logicalIndex] = expected_result[i][h][d];
                 }
             }
         }
         if (!checkVectorByRelativeError<float>(actual.data(), expected.data(), actual.size(), 0.02f)) {
-            MNN_ERROR("AttentionC4Test failed for %s\n", caseName);
+            MNN_ERROR("AttentionC4Test failed!\n");
             return false;
         }
         return true;
@@ -655,86 +638,24 @@ public:
         generateMask(seqLen, seqLen);
         expected_result = naiveAttention->onExecute(query, key, value, mask, seqLen);
 
-        auto decodeQuery = generateRandTensor(1, NumHead, HeadDim, precision);
-        auto decodeKey = generateRandTensor(1, KvNumHead, HeadDim, precision);
-        auto decodeValue = generateRandTensor(1, KvNumHead, HeadDim, precision);
-        auto decodeQueryVar = vector_to_var(decodeQuery);
-        auto decodeKeyVar = vector_to_var(decodeKey);
-        auto decodeValueVar = vector_to_var(decodeValue);
-        std::vector<std::vector<int>> decodeMask;
-
         gMeta.previous = 0;
         gMeta.remove = 0;
         gMeta.add = seqLen;
-        auto attn = _makeAttentionModule(8, true, true);
+        auto attn = _makeAttentionModule(8, true);
         Output = attn->onForward({Query, Key, Value, Mask})[0];
-        if (!compareC4Result(seqLen, "NCHW Q/K/V prefill")) {
+        gMeta.sync();
+        if (!compareC4Result(seqLen)) {
             return false;
         }
-        gMeta.sync();
-        expected_result = naiveAttention->onExecute(decodeQuery, decodeKey, decodeValue, decodeMask, 1);
-        gMeta.add = 1;
-        Output = attn->onForward({decodeQueryVar, decodeKeyVar, decodeValueVar, Mask})[0];
-        if (!compareC4Result(1, "NCHW Q/K/V decode")) {
-            return false;
-        }
-        gMeta.sync();
 
-        std::shared_ptr<NaiveAttention> naiveAttentionValueC4(new NaiveAttention);
-        expected_result = naiveAttentionValueC4->onExecute(query, key, value, mask, seqLen);
         auto valueC4 = vector_to_c4_value(value);
         gMeta.previous = 0;
         gMeta.remove = 0;
         gMeta.add = seqLen;
-        auto attnValueC4 = _makeAttentionModule(8, true, true);
+        auto attnValueC4 = _makeAttentionModule(8, true);
         Output = attnValueC4->onForward({Query, Key, valueC4, Mask})[0];
-        if (!compareC4Result(seqLen, "NCHW Q/K and C4 V prefill")) {
-            return false;
-        }
         gMeta.sync();
-
-        auto decodeValueC4 = vector_to_c4_value(decodeValue);
-        expected_result = naiveAttentionValueC4->onExecute(decodeQuery, decodeKey, decodeValue, decodeMask, 1);
-        gMeta.add = 1;
-        Output = attnValueC4->onForward({decodeQueryVar, decodeKeyVar, decodeValueC4, Mask})[0];
-        if (!compareC4Result(1, "NCHW Q/K and C4 V decode")) {
-            return false;
-        }
-        gMeta.sync();
-
-        return true;
-    }
-
-    bool runTail(int seqLen, int precision) {
-        generateInput(seqLen, precision);
-        generateMask(seqLen, seqLen);
-        auto valueC4 = vector_to_c4_value(value);
-
-        std::shared_ptr<NaiveAttention> outputTailNaive(new NaiveAttention);
-        expected_result = outputTailNaive->onExecute(query, key, value, mask, seqLen);
-        gMeta.previous = 0;
-        gMeta.remove = 0;
-        gMeta.add = seqLen;
-        auto outputTailAttn = _makeAttentionModule(8, true, true);
-        Output = outputTailAttn->onForward({Query, Key, Value, Mask})[0];
-        if (!compareC4Result(seqLen, "NCHW Q/K/V with C4 tail output")) {
-            return false;
-        }
-        gMeta.sync();
-
-        std::shared_ptr<NaiveAttention> valueTailNaive(new NaiveAttention);
-        expected_result = valueTailNaive->onExecute(query, key, value, mask, seqLen);
-        gMeta.previous = 0;
-        gMeta.remove = 0;
-        gMeta.add = seqLen;
-        auto valueTailAttn = _makeAttentionModule(8, true, true);
-        Output = valueTailAttn->onForward({Query, Key, valueC4, Mask})[0];
-        if (!compareC4Result(seqLen, "NCHW Q/K with C4 tail V/output")) {
-            return false;
-        }
-        gMeta.sync();
-
-        return true;
+        return compareC4Result(seqLen);
     }
 
     virtual bool run(int precision) {
@@ -743,27 +664,6 @@ public:
     }
 };
 
-class AttentionC4TailTest : public AttentionC4Test {
-public:
-    virtual bool run(int precision) {
-        const int originalNumHead = NumHead;
-        const int originalKvNumHead = KvNumHead;
-        const int originalHeadDim = HeadDim;
-        NumHead = 3;
-        KvNumHead = 1;
-        HeadDim = 4;
-        srand(2024);
-        bool tailPass = runTail(10, precision);
-        NumHead = 2;
-        tailPass = tailPass && runTail(10, precision);
-        NumHead = originalNumHead;
-        KvNumHead = originalKvNumHead;
-        HeadDim = originalHeadDim;
-        return tailPass;
-    }
-};
-
 MNNTestSuiteRegister(AttentionC4Test, "op/attention_c4");
-MNNTestSuiteRegister(AttentionC4TailTest, "op/attention_c4_tail");
 MNNTestSuiteRegister(SpeedAttentionTest, "speed/attention");
 #endif

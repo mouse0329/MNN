@@ -91,7 +91,6 @@ ErrorCode GroupNormExecution::onResize(const std::vector<Tensor*>& inputs, const
     }
     auto size = getWorkspaceSizeInBytes(); 
     auto buffer_ws = pool->alloc(size);
-    if (nullptr == buffer_ws.first) { MNN_ERROR("CUDA alloc failed\n"); return OUT_OF_MEMORY; }
     mWorkSpacePtr = (void*)((uint8_t*)buffer_ws.first + buffer_ws.second);
     runtime->memset(mWorkSpacePtr, 0, size);
     return NO_ERROR;

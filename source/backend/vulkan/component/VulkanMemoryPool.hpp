@@ -35,7 +35,7 @@ public:
     }
 
 private:
-    VkDeviceMemory mMemory = VK_NULL_HANDLE;
+    VkDeviceMemory mMemory;
     const VulkanDevice& mDevice;
     uint32_t mTypeIndex;
     VkDeviceSize mSize;

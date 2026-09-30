@@ -39,8 +39,6 @@ private:
     int mOutterSize = 1;
     MemChunk mTmpInputFloat;
     MemChunk mTmpOutputFloat;
-    MemChunk mTmpUnpackedInput;
-    MemChunk mTmpUnpackedOutput;
     bool mNeedUnpackC4 = false;
 };
 } // namespace MNN

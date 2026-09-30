@@ -132,13 +132,7 @@ class Qwen2_5OmniTalker(Talker):
         for block in self.talker.model.layers:
             layer_id = len(self.blocks)
             decoder = Decoder(block, layer_id, self)
-            # Talker keeps standard torch.nn.Linear (not FakeLinear), so the
-            # FusedAttention/FusedRoPE + FuseTransformerC4 rewrite chain cannot
-            # close end-to-end (o_proj stays as MatMul→ConvertTensor→Conv and
-            # RoPE loses its C4-packed q/k inputs). Export standard attention
-            # for talker to avoid the LlmExporter::FusedRoPE Extra op crash
-            # reported in alibaba/MNN#4673.
-            decoder.self_attn.export_fused_attn = False
+            decoder.self_attn.export_fused_attn = True
             self.blocks.append(decoder)
 
 

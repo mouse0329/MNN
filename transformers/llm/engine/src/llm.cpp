@@ -47,8 +47,6 @@ static MNNForwardType backend_type_convert(const std::string& type_str) {
         return MNN_FORWARD_OPENGL;
     if (type_str == "vulkan")
         return MNN_FORWARD_VULKAN;
-    if (type_str == "hexagon")
-        return MNN_FORWARD_HEXAGON;
     if (type_str == "npu")
         return MNN_FORWARD_NN;
     return MNN_FORWARD_AUTO;
@@ -296,11 +294,6 @@ bool Llm::load() {
     }
     MNN::Express::ExecutorScope s(mExecutor);
     Timer _t;
-    // Must release old module before runtime, because module's Execution objects
-    // reference Backend owned by RuntimeManager. Releasing runtime first would
-    // destroy the Backend, causing use-after-free when module destructor runs.
-    mModulePool.clear();
-    mModule.reset();
     initRuntime();
     // init module status
     // 1. load vocab
@@ -1253,7 +1246,6 @@ Llm::~Llm() {
     }
 #endif
     mGenerateParam.reset();
-    mModulePool.clear();
     mModule.reset();
     mRuntimeManager.reset();
     mProcessorRuntimeManager.reset();
@@ -1517,7 +1509,7 @@ VARP Llm::gen_attention_mask(int seq_len) {
         }
 
         // Mask: lower triangular
-       if ((mConfig->backend_type() == "cpu" || mConfig->backend_type() == "hexagon") && mValidBlockSize.empty()) {
+       if (mConfig->backend_type() == "cpu" && mValidBlockSize.empty()) { // Now only cpu supports using lower triangular to opt the attention performance
            attentionMask = _Input({}, NCHW, halide_type_of<float>());
            auto ptr = attentionMask->writeMap<float>();
            ptr[0] = 0;

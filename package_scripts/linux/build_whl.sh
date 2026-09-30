@@ -38,12 +38,7 @@ rm -rf wheelhouse && mkdir wheelhouse
 
 #Compile wheels
 for PYBIN in /opt/python/*/bin; do
-    python_tag=$(basename "$(dirname "$PYBIN")")
-    case "$python_tag" in
-        cp38-*|cp39-*|cp310-*|cp311-*|cp312-*|cp313-*|cp314-*) ;;
-        *) continue ;;
-    esac
-    "${PYBIN}/pip" install -U "numpy<2.5"
+    "${PYBIN}/pip" install -U numpy
     "${PYBIN}/python" setup.py bdist_wheel --version $mnn_version
 done
 
